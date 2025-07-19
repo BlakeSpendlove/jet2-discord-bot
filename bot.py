@@ -16,6 +16,7 @@ BST = pytz.timezone('Europe/London')
 # Get environment variables
 TOKEN = os.getenv("DISCORD_TOKEN")
 WHITELIST_ROLE_IDS = os.getenv("WHITELIST_ROLE_IDS", "")  # Comma separated role IDs
+FLIGHT_NOTICE_CHANNEL_ID = os.getenv("FLIGHT_NOTICE_CHANNEL_ID")  # Fixed channel for flight_notice
 
 # Convert role ids to int set for quick lookup
 WHITELIST_ROLES = {int(role_id.strip()) for role_id in WHITELIST_ROLE_IDS.split(",") if role_id.strip().isdigit()}
@@ -29,7 +30,6 @@ def get_bst_timestamp():
 
 def is_user_whitelisted(interaction: discord.Interaction):
     if not WHITELIST_ROLES:
-        # No whitelist set = allow all (optional: change this if you want stricter)
         return True
     user_roles = {role.id for role in interaction.user.roles}
     return bool(user_roles.intersection(WHITELIST_ROLES))
@@ -39,7 +39,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Sync commands on ready
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -49,8 +48,6 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-# Slash commands
-
 @bot.tree.command(name="announce", description="Announce an embed message with optional ping in a specified channel.")
 @app_commands.describe(message="Message to announce", ping="Ping type (@everyone, @here, or mention)", channel_id="Channel ID to send message")
 async def announce(interaction: discord.Interaction, message: str, ping: str, channel_id: str):
@@ -58,26 +55,22 @@ async def announce(interaction: discord.Interaction, message: str, ping: str, ch
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
 
-    # Validate ping
     valid_pings = ["@everyone", "@here"]
     channel = interaction.guild.get_channel(int(channel_id)) if interaction.guild else None
     if not channel:
         await interaction.response.send_message("Invalid channel ID.", ephemeral=True)
         return
 
-    # Prepare ping text
     ping_text = ""
     if ping.lower() in valid_pings:
         ping_text = ping.lower()
     else:
-        # Try to resolve mention
         if ping.startswith("<@") and ping.endswith(">"):
             ping_text = ping
         else:
             await interaction.response.send_message("Ping must be @everyone, @here, or a valid mention.", ephemeral=True)
             return
 
-    # Create embed
     embed = discord.Embed(description=message, color=EMBED_COLOR)
     embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
 
@@ -95,17 +88,25 @@ async def dm_user(interaction: discord.Interaction, user: discord.User, message:
     embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
 
     try:
-        # Dot outside embed to force message delivery
         await user.send(".", embed=embed)
         await interaction.response.send_message(f"Message sent to {user}.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
 
-@bot.tree.command(name="flight_notice", description="Send flight notice with buttons.")
+@bot.tree.command(name="flight_notice", description="Send flight notice with buttons in the fixed channel.")
 @app_commands.describe(host="Host user", flight_code="Flight code", airport_link="Airport/game link", vc_link="Voice channel link")
 async def flight_notice(interaction: discord.Interaction, host: discord.User, flight_code: str, airport_link: str, vc_link: str):
     if not is_user_whitelisted(interaction):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+
+    if not FLIGHT_NOTICE_CHANNEL_ID or not FLIGHT_NOTICE_CHANNEL_ID.isdigit():
+        await interaction.response.send_message("Flight notice channel ID is not configured correctly.", ephemeral=True)
+        return
+
+    channel = interaction.guild.get_channel(int(FLIGHT_NOTICE_CHANNEL_ID)) if interaction.guild else None
+    if not channel:
+        await interaction.response.send_message("Cannot find the flight notice channel.", ephemeral=True)
         return
 
     embed_desc = (
@@ -120,7 +121,6 @@ async def flight_notice(interaction: discord.Interaction, host: discord.User, fl
     embed = discord.Embed(description=embed_desc, color=EMBED_COLOR)
     embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
 
-    # Buttons
     button_game = Button(label="Join the Game", url=airport_link)
     button_vc = Button(label="Join the VC", url=vc_link)
 
@@ -128,7 +128,8 @@ async def flight_notice(interaction: discord.Interaction, host: discord.User, fl
     view.add_item(button_game)
     view.add_item(button_vc)
 
-    await interaction.response.send_message(embed=embed, view=view)
+    await channel.send(embed=embed, view=view)
+    await interaction.response.send_message(f"Flight notice sent in {channel.mention}.", ephemeral=True)
 
 @bot.tree.command(name="exam_results", description="DM a user their exam results.")
 @app_commands.describe(user="User to DM", score="Exam score", passed="Did they pass? (passed/failed)")
@@ -163,5 +164,4 @@ async def exam_results(interaction: discord.Interaction, user: discord.User, sco
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
 
-# Run the bot
 bot.run(TOKEN)
