@@ -13,15 +13,14 @@ from discord.ui import Button, View
 EMBED_COLOR = 0x7a1a1a
 BST = pytz.timezone('Europe/London')
 
-# Get environment variables
+# Environment variables
 TOKEN = os.getenv("DISCORD_TOKEN")
-WHITELIST_ROLE_IDS = os.getenv("WHITELIST_ROLE_IDS", "")  # Comma separated role IDs
-FLIGHT_NOTICE_CHANNEL_ID = os.getenv("FLIGHT_NOTICE_CHANNEL_ID")  # Fixed channel for flight_notice
+WHITELIST_ROLE_IDS = os.getenv("WHITELIST_ROLE_IDS", "")
+FLIGHT_NOTICE_CHANNEL_ID = os.getenv("FLIGHT_NOTICE_CHANNEL_ID")
 
-# Convert role ids to int set for quick lookup
 WHITELIST_ROLES = {int(role_id.strip()) for role_id in WHITELIST_ROLE_IDS.split(",") if role_id.strip().isdigit()}
 
-# Helper functions
+# Helpers
 def gen_random_id(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
@@ -48,6 +47,7 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# /announce
 @bot.tree.command(name="announce", description="Announce an embed message with optional ping in a specified channel.")
 @app_commands.describe(message="Message to announce", ping="Ping type (@everyone, @here, or mention)", channel_id="Channel ID to send message")
 async def announce(interaction: discord.Interaction, message: str, ping: str, channel_id: str):
@@ -61,15 +61,13 @@ async def announce(interaction: discord.Interaction, message: str, ping: str, ch
         await interaction.response.send_message("Invalid channel ID.", ephemeral=True)
         return
 
-    ping_text = ""
     if ping.lower() in valid_pings:
         ping_text = ping.lower()
+    elif ping.startswith("<@") and ping.endswith(">"):
+        ping_text = ping
     else:
-        if ping.startswith("<@") and ping.endswith(">"):
-            ping_text = ping
-        else:
-            await interaction.response.send_message("Ping must be @everyone, @here, or a valid mention.", ephemeral=True)
-            return
+        await interaction.response.send_message("Ping must be @everyone, @here, or a valid mention.", ephemeral=True)
+        return
 
     embed = discord.Embed(description=message, color=EMBED_COLOR)
     embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
@@ -77,6 +75,7 @@ async def announce(interaction: discord.Interaction, message: str, ping: str, ch
     await channel.send(content=ping_text, embed=embed)
     await interaction.response.send_message(f"Announcement sent to {channel.mention}.", ephemeral=True)
 
+# /dm_user
 @bot.tree.command(name="dm_user", description="DM a user an embed message.")
 @app_commands.describe(user="User to DM", message="Message to send")
 async def dm_user(interaction: discord.Interaction, user: discord.User, message: str):
@@ -93,6 +92,7 @@ async def dm_user(interaction: discord.Interaction, user: discord.User, message:
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
 
+# /flight_notice
 @bot.tree.command(name="flight_notice", description="Send flight notice with buttons in the fixed channel.")
 @app_commands.describe(host="Host user", flight_code="Flight code", airport_link="Airport/game link", vc_link="Voice channel link")
 async def flight_notice(interaction: discord.Interaction, host: discord.User, flight_code: str, airport_link: str, vc_link: str):
@@ -110,7 +110,6 @@ async def flight_notice(interaction: discord.Interaction, host: discord.User, fl
         return
 
     embed_desc = (
-        f"@everyone\n\n"
         f"@{host.name} ({host.mention})\n"
         f"**{flight_code} | Flight Join**\n"
         f"Please all begin joining for flight briefing.\n\n"
@@ -128,9 +127,11 @@ async def flight_notice(interaction: discord.Interaction, host: discord.User, fl
     view.add_item(button_game)
     view.add_item(button_vc)
 
-    await channel.send(embed=embed, view=view)
+    # Send with @everyone outside the embed
+    await channel.send(content="@everyone", embed=embed, view=view)
     await interaction.response.send_message(f"Flight notice sent in {channel.mention}.", ephemeral=True)
 
+# /exam_results
 @bot.tree.command(name="exam_results", description="DM a user their exam results.")
 @app_commands.describe(user="User to DM", score="Exam score", passed="Did they pass? (passed/failed)")
 async def exam_results(interaction: discord.Interaction, user: discord.User, score: float, passed: str):
@@ -164,4 +165,5 @@ async def exam_results(interaction: discord.Interaction, user: discord.User, sco
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
 
+# Run the bot
 bot.run(TOKEN)
