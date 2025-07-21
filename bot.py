@@ -20,6 +20,7 @@ FLIGHT_NOTICE_CHANNEL_ID = os.getenv("FLIGHT_NOTICE_CHANNEL_ID")
 
 WHITELIST_ROLES = {int(role_id.strip()) for role_id in WHITELIST_ROLE_IDS.split(",") if role_id.strip().isdigit()}
 
+
 # Helpers
 def gen_random_id(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -32,6 +33,7 @@ def is_user_whitelisted(interaction: discord.Interaction):
         return True
     user_roles = {role.id for role in interaction.user.roles}
     return bool(user_roles.intersection(WHITELIST_ROLES))
+
 
 # Bot setup
 intents = discord.Intents.default()
@@ -46,6 +48,7 @@ async def on_ready():
         print(f"Synced {len(synced)} commands")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+
 
 # /announce
 @bot.tree.command(name="announce", description="Announce an embed message with optional ping in a specified channel.")
@@ -75,6 +78,7 @@ async def announce(interaction: discord.Interaction, message: str, ping: str, ch
     await channel.send(content=ping_text, embed=embed)
     await interaction.response.send_message(f"Announcement sent to {channel.mention}.", ephemeral=True)
 
+
 # /dm_user
 @bot.tree.command(name="dm_user", description="DM a user an embed message.")
 @app_commands.describe(user="User to DM", message="Message to send")
@@ -92,6 +96,7 @@ async def dm_user(interaction: discord.Interaction, user: discord.User, message:
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
 
+
 # /flight_notice
 @bot.tree.command(name="flight_notice", description="Send flight notice with buttons in the fixed channel.")
 @app_commands.describe(host="Host user", flight_code="Flight code", airport_link="Airport/game link", vc_link="Voice channel link")
@@ -100,36 +105,43 @@ async def flight_notice(interaction: discord.Interaction, host: discord.User, fl
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
 
-    if not FLIGHT_NOTICE_CHANNEL_ID or not FLIGHT_NOTICE_CHANNEL_ID.isdigit():
-        await interaction.response.send_message("Flight notice channel ID is not configured correctly.", ephemeral=True)
-        return
+    await interaction.response.defer(ephemeral=True)
 
-    channel = interaction.guild.get_channel(int(FLIGHT_NOTICE_CHANNEL_ID)) if interaction.guild else None
-    if not channel:
-        await interaction.response.send_message("Cannot find the flight notice channel.", ephemeral=True)
-        return
+    try:
+        if not FLIGHT_NOTICE_CHANNEL_ID or not FLIGHT_NOTICE_CHANNEL_ID.isdigit():
+            await interaction.followup.send("Flight notice channel ID is not configured correctly.", ephemeral=True)
+            return
 
-    embed_desc = (
-        f"@{host.name} ({host.mention})\n"
-        f"**{flight_code} | Flight Join**\n"
-        f"Please all begin joining for flight briefing.\n\n"
-        f"**Host:** {host.mention}\n"
-        f"**Aircraft:** B737-800\n"
-        f"Ensure you join in a suitable avatar and be ready to get your uniform on."
-    )
-    embed = discord.Embed(description=embed_desc, color=EMBED_COLOR)
-    embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
+        channel = interaction.guild.get_channel(int(FLIGHT_NOTICE_CHANNEL_ID)) if interaction.guild else None
+        if not channel:
+            await interaction.followup.send("Cannot find the flight notice channel.", ephemeral=True)
+            return
 
-    button_game = Button(label="Join the Game", url=airport_link)
-    button_vc = Button(label="Join the VC", url=vc_link)
+        embed_desc = (
+            f"{host.mention} ({host.name})\n"
+            f"**{flight_code} | Flight Join**\n"
+            f"Please all begin joining for flight briefing.\n\n"
+            f"**Host:** {host.mention}\n"
+            f"**Aircraft:** B737-800\n"
+            f"Ensure you join in a suitable avatar and be ready to get your uniform on."
+        )
 
-    view = View()
-    view.add_item(button_game)
-    view.add_item(button_vc)
+        embed = discord.Embed(description=embed_desc, color=EMBED_COLOR)
+        embed.set_footer(text=f"ID: {gen_random_id()} | {get_bst_timestamp()}")
 
-    # Send with @everyone outside the embed
-    await channel.send(content="@everyone", embed=embed, view=view)
-    await interaction.response.send_message(f"Flight notice sent in {channel.mention}.", ephemeral=True)
+        button_game = Button(label="Join the Game", url=airport_link)
+        button_vc = Button(label="Join the VC", url=vc_link)
+
+        view = View()
+        view.add_item(button_game)
+        view.add_item(button_vc)
+
+        await channel.send(content="@everyone", embed=embed, view=view)
+        await interaction.followup.send(f"Flight notice sent in {channel.mention}.", ephemeral=True)
+
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
 
 # /exam_results
 @bot.tree.command(name="exam_results", description="DM a user their exam results.")
@@ -164,6 +176,7 @@ async def exam_results(interaction: discord.Interaction, user: discord.User, sco
         await interaction.response.send_message(f"Exam results sent to {user}.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to send DM: {e}", ephemeral=True)
+
 
 # Run the bot
 bot.run(TOKEN)
