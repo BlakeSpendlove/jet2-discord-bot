@@ -1,161 +1,119 @@
 import discord
 from discord.ext import commands
-from discord import app_commands, File
+from discord import app_commands
 import os
 import random
-import string
-from datetime import datetime
+import datetime
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_IDS = list(map(int, os.getenv("GUILD_IDS", "").split(",")))
+GUILD_IDS = [int(gid) for gid in os.getenv("GUILD_IDS", "").split(",") if gid]
 
-WHITELIST_APP_RESULTS_ROLES = list(map(int, os.getenv("WHITELIST_APP_RESULTS_ROLES", "").split(",")))
-WHITELIST_EMBED_ROLES = list(map(int, os.getenv("WHITELIST_EMBED_ROLES", "").split(",")))
-WHITELIST_EXPLOITER_LOG_ROLES = list(map(int, os.getenv("WHITELIST_EXPLOITER_LOG_ROLES", "").split(",")))
-WHITELIST_FLIGHTBRIEFING_ROLES = list(map(int, os.getenv("WHITELIST_FLIGHTBRIEFING_ROLES", "").split(",")))
-WHITELIST_FLIGHTLOG_DELETE_ROLES = list(map(int, os.getenv("WHITELIST_FLIGHTLOG_DELETE_ROLES", "").split(",")))
-WHITELIST_FLIGHTLOG_ROLES = list(map(int, os.getenv("WHITELIST_FLIGHTLOG_ROLES", "").split(",")))
-WHITELIST_INFRACTION_REMOVE_ROLES = list(map(int, os.getenv("WHITELIST_INFRACTION_REMOVE_ROLES", "").split(",")))
-WHITELIST_INFRACTION_ROLES = list(map(int, os.getenv("WHITELIST_INFRACTION_ROLES", "").split(",")))
-WHITELIST_INFRACTION_VIEW_ROLES = list(map(int, os.getenv("WHITELIST_INFRACTION_VIEW_ROLES", "").split(",")))
-WHITELIST_PROMOTE_ROLES = list(map(int, os.getenv("WHITELIST_PROMOTE_ROLES", "").split(",")))
+WHITELIST_PROMOTE_ROLES = [int(rid) for rid in os.getenv("WHITELIST_PROMOTE_ROLES", "").split(",") if rid]
+WHITELIST_INFRACTION_ROLES = [int(rid) for rid in os.getenv("WHITELIST_INFRACTION_ROLES", "").split(",") if rid]
+WHITELIST_INFRACTION_REMOVE_ROLES = [int(rid) for rid in os.getenv("WHITELIST_INFRACTION_REMOVE_ROLES", "").split(",") if rid]
+WHITELIST_INFRACTION_VIEW_ROLES = [int(rid) for rid in os.getenv("WHITELIST_INFRACTION_VIEW_ROLES", "").split(",") if rid]
+WHITELIST_EMBED_ROLES = [int(rid) for rid in os.getenv("WHITELIST_EMBED_ROLES", "").split(",") if rid]
+WHITELIST_APP_RESULTS_ROLES = [int(rid) for rid in os.getenv("WHITELIST_APP_RESULTS_ROLES", "").split(",") if rid]
+WHITELIST_EXPLOITER_LOG_ROLES = [int(rid) for rid in os.getenv("WHITELIST_EXPLOITER_LOG_ROLES", "").split(",") if rid]
+WHITELIST_FLIGHTBRIEFING_ROLES = [int(rid) for rid in os.getenv("WHITELIST_FLIGHTBRIEFING_ROLES", "").split(",") if rid]
+WHITELIST_FLIGHTLOG_ROLES = [int(rid) for rid in os.getenv("WHITELIST_FLIGHTLOG_ROLES", "").split(",") if rid]
+WHITELIST_FLIGHTLOG_DELETE_ROLES = [int(rid) for rid in os.getenv("WHITELIST_FLIGHTLOG_DELETE_ROLES", "").split(",") if rid]
 
-FLIGHTLOG_CHANNEL_ID = int(os.getenv("FLIGHTLOG_CHANNEL_ID", 0))
-INFRACTION_CHANNEL_ID = int(os.getenv("INFRACTION_CHANNEL_ID", 0))
 PROMOTE_CHANNEL_ID = int(os.getenv("PROMOTE_CHANNEL_ID", 0))
+INFRACTION_CHANNEL_ID = int(os.getenv("INFRACTION_CHANNEL_ID", 0))
+FLIGHTLOG_CHANNEL_ID = int(os.getenv("FLIGHTLOG_CHANNEL_ID", 0))
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+
 bot = commands.Bot(command_prefix="/", intents=intents)
 
-
 def generate_footer():
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    return f"ID: {code} | {timestamp}"
-
-
-def is_whitelisted(interaction: discord.Interaction, allowed_roles: list):
-    return any(role.id in allowed_roles for role in interaction.user.roles)
-
+    footer_id = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=6))
+    timestamp = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+    return f"ID: {footer_id} • {timestamp}"
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync(guild=None)
-    print(f"Logged in as {bot.user}")
+    await bot.wait_until_ready()
+    try:
+        synced = await bot.tree.sync(guild=discord.Object(id=GUILD_IDS[0]))
+        print(f"Synced {len(synced)} command(s) to {GUILD_IDS[0]}")
+    except Exception as e:
+        print(e)
 
+# Promote command
+@bot.tree.command(name="promote", description="Log a user promotion")
+@app_commands.describe(user="User promoted", reason="Reason for promotion")
+async def promote(interaction: discord.Interaction, user: discord.Member, reason: str):
+    if not any(role.id in WHITELIST_PROMOTE_ROLES for role in interaction.user.roles):
+        return await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+    channel = bot.get_channel(PROMOTE_CHANNEL_ID)
+    embed = discord.Embed(title="Promotion Logged", color=discord.Color.green())
+    embed.add_field(name="User", value=user.mention, inline=True)
+    embed.add_field(name="Promoted by", value=interaction.user.mention, inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.set_footer(text=generate_footer())
+    await channel.send(embed=embed)
+    await interaction.response.send_message(f"Promotion logged for {user.mention}", ephemeral=True)
 
-@bot.tree.command(name="embed", description="Send a custom embed using Discohook JSON")
-@app_commands.checks.has_any_role(*WHITELIST_EMBED_ROLES)
-@app_commands.describe(json="Raw Discohook-style embed JSON")
-async def embed(interaction: discord.Interaction, json: str):
-    await interaction.response.send_message("Embed command received (functionality placeholder)", ephemeral=True)
+# Infraction command
+@bot.tree.command(name="infraction", description="Log an infraction")
+@app_commands.describe(user="User infracted", type="Type of action", reason="Reason")
+async def infraction(interaction: discord.Interaction, user: discord.Member, type: str, reason: str):
+    if not any(role.id in WHITELIST_INFRACTION_ROLES for role in interaction.user.roles):
+        return await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+    channel = bot.get_channel(INFRACTION_CHANNEL_ID)
+    embed = discord.Embed(title="Infraction Logged", color=discord.Color.red())
+    embed.add_field(name="User", value=user.mention)
+    embed.add_field(name="Type", value=type)
+    embed.add_field(name="Reason", value=reason)
+    embed.add_field(name="Logged by", value=interaction.user.mention)
+    embed.set_footer(text=generate_footer())
+    await channel.send(embed=embed)
+    await interaction.response.send_message(f"Infraction logged for {user.mention}", ephemeral=True)
 
+# Embed command
+@bot.tree.command(name="embed", description="Send a custom embed")
+@app_commands.describe(json_code="Embed JSON")
+async def embed(interaction: discord.Interaction, json_code: str):
+    if not any(role.id in WHITELIST_EMBED_ROLES for role in interaction.user.roles):
+        return await interaction.response.send_message("Unauthorized", ephemeral=True)
+    try:
+        data = discord.Embed.from_dict(eval(json_code))
+        await interaction.channel.send(embed=data)
+        await interaction.response.send_message("Embed sent.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
-@bot.tree.command(name="app_results", description="Send application result to user")
-@app_commands.checks.has_any_role(*WHITELIST_APP_RESULTS_ROLES)
-@app_commands.describe(user="User to DM", result="Result: Pass or Fail")
+# App results command
+@bot.tree.command(name="app_results", description="Send app result")
+@app_commands.describe(user="User to DM", result="Pass or fail")
 async def app_results(interaction: discord.Interaction, user: discord.User, result: str):
-    embed = discord.Embed(
-        title="Application Result",
-        description=f"You have **{result.upper()}** your application.",
-        color=discord.Color.green() if result.lower() == "pass" else discord.Color.red()
-    )
+    if not any(role.id in WHITELIST_APP_RESULTS_ROLES for role in interaction.user.roles):
+        return await interaction.response.send_message("Unauthorized", ephemeral=True)
+    embed = discord.Embed(title="Application Result", description=f"You have {'passed' if result.lower() == 'pass' else 'failed'} your application.", color=discord.Color.green() if result.lower() == 'pass' else discord.Color.red())
     embed.set_footer(text=generate_footer())
     await user.send(embed=embed)
-    await interaction.response.send_message("Result sent.", ephemeral=True)
+    await interaction.response.send_message(f"Result sent to {user.mention}.", ephemeral=True)
 
-
+# Exploiter log command
 @bot.tree.command(name="exploiter_log", description="Log an exploiter")
-@app_commands.checks.has_any_role(*WHITELIST_EXPLOITER_LOG_ROLES)
-@app_commands.describe(user="User being reported", reason="Why they are being logged", evidence="Upload file")
-async def exploiter_log(interaction: discord.Interaction, user: str, reason: str, evidence: discord.Attachment):
-    embed = discord.Embed(title="🚨 Exploiter Logged", color=discord.Color.red())
-    embed.add_field(name="User", value=user, inline=False)
-    embed.add_field(name="Reason", value=reason, inline=False)
+@app_commands.describe(user="Exploiter", evidence="Upload image/video evidence")
+async def exploiter_log(interaction: discord.Interaction, user: discord.User, evidence: discord.Attachment):
+    if not any(role.id in WHITELIST_EXPLOITER_LOG_ROLES for role in interaction.user.roles):
+        return await interaction.response.send_message("Unauthorized", ephemeral=True)
+    embed = discord.Embed(title="Exploiter Logged", color=discord.Color.red())
+    embed.add_field(name="User", value=user.mention)
+    embed.add_field(name="Logged by", value=interaction.user.mention)
     embed.set_image(url=evidence.url)
     embed.set_footer(text=generate_footer())
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="promote", description="Log a promotion")
-@app_commands.checks.has_any_role(*WHITELIST_PROMOTE_ROLES)
-@app_commands.describe(user="User being promoted", reason="Reason for promotion")
-async def promote(interaction: discord.Interaction, user: discord.Member, reason: str):
-    embed = discord.Embed(title="📈 Promotion Logged", color=discord.Color.blue())
-    embed.add_field(name="User", value=user.mention, inline=False)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.set_footer(text=generate_footer())
-    channel = bot.get_channel(PROMOTE_CHANNEL_ID)
-    if channel:
-        await channel.send(embed=embed)
-    await interaction.response.send_message("Promotion logged.", ephemeral=True)
-
-
-@bot.tree.command(name="flight_log", description="Log a flight")
-@app_commands.checks.has_any_role(*WHITELIST_FLIGHTLOG_ROLES)
-@app_commands.describe(file="Flight log file")
-async def flight_log(interaction: discord.Interaction, file: discord.Attachment):
-    embed = discord.Embed(title="✈️ Flight Log Submitted", color=discord.Color.blue())
-    embed.add_field(name="Submitted By", value=interaction.user.mention, inline=False)
-    embed.set_footer(text=generate_footer())
-    channel = bot.get_channel(FLIGHTLOG_CHANNEL_ID)
-    await channel.send(embed=embed, file=await file.to_file())
-    await interaction.response.send_message("Flight log submitted.", ephemeral=True)
-
-
-@bot.tree.command(name="flightlog_delete", description="Delete a flight log by ID")
-@app_commands.checks.has_any_role(*WHITELIST_FLIGHTLOG_DELETE_ROLES)
-@app_commands.describe(log_id="Log ID to delete")
-async def flightlog_delete(interaction: discord.Interaction, log_id: str):
-    await interaction.response.send_message(f"(Placeholder) Deleted log ID {log_id}", ephemeral=True)
-
-
-@bot.tree.command(name="flightlogs_view", description="View a user's flight logs")
-@app_commands.checks.has_any_role(*WHITELIST_FLIGHTLOG_ROLES)
-@app_commands.describe(user="User to view logs for")
-async def flightlogs_view(interaction: discord.Interaction, user: discord.User):
-    await interaction.response.send_message(f"(Placeholder) Viewing logs for {user.mention}", ephemeral=True)
-
-
-@bot.tree.command(name="infraction", description="Log an infraction")
-@app_commands.checks.has_any_role(*WHITELIST_INFRACTION_ROLES)
-@app_commands.describe(user="User being infracted", reason="Reason", type="Type (e.g. warning, termination)")
-async def infraction(interaction: discord.Interaction, user: discord.Member, reason: str, type: str):
-    embed = discord.Embed(title="⚠️ Infraction Logged", color=discord.Color.orange())
-    embed.add_field(name="User", value=user.mention, inline=False)
-    embed.add_field(name="Type", value=type, inline=True)
-    embed.add_field(name="Reason", value=reason, inline=False)
-    embed.set_footer(text=generate_footer())
     channel = bot.get_channel(INFRACTION_CHANNEL_ID)
-    if channel:
-        await channel.send(embed=embed)
-    await interaction.response.send_message("Infraction logged.", ephemeral=True)
+    await channel.send(embed=embed)
+    await interaction.response.send_message("Exploiter logged.", ephemeral=True)
 
-
-@bot.tree.command(name="infraction_remove", description="Delete an infraction by ID")
-@app_commands.checks.has_any_role(*WHITELIST_INFRACTION_REMOVE_ROLES)
-@app_commands.describe(log_id="Log ID to delete")
-async def infraction_remove(interaction: discord.Interaction, log_id: str):
-    await interaction.response.send_message(f"(Placeholder) Deleted infraction ID {log_id}", ephemeral=True)
-
-
-@bot.tree.command(name="infraction_view", description="View a user's infractions")
-@app_commands.checks.has_any_role(*WHITELIST_INFRACTION_VIEW_ROLES)
-@app_commands.describe(user="User to view infractions for")
-async def infraction_view(interaction: discord.Interaction, user: discord.User):
-    await interaction.response.send_message(f"(Placeholder) Viewing infractions for {user.mention}", ephemeral=True)
-
-
-@bot.tree.command(name="flight_briefing", description="Send a flight briefing")
-@app_commands.checks.has_any_role(*WHITELIST_FLIGHTBRIEFING_ROLES)
-@app_commands.describe(game_link="Flight game link", vc_link="VC link")
-async def flight_briefing(interaction: discord.Interaction, game_link: str, vc_link: str):
-    embed = discord.Embed(title="🛫 Flight Briefing", color=discord.Color.teal())
-    embed.add_field(name="Game Link", value=game_link, inline=False)
-    embed.add_field(name="VC Link", value=vc_link, inline=False)
-    embed.set_footer(text=generate_footer())
-    await interaction.response.send_message(embed=embed)
+# Additional commands to be added: flight_briefing, flight_log, flightlog_delete, flightlogs_view, infraction_remove, infraction_view
+# Let me know if you'd like those added now or with specific formats.
 
 bot.run(TOKEN)
