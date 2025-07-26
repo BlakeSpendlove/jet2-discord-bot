@@ -1,193 +1,224 @@
+import os
 import discord
 from discord.ext import commands
-from discord import app_commands, File, ButtonStyle
-from discord.ui import View, Button
-import os
 import random
 import string
-from datetime import datetime, timezone
+from datetime import datetime
 
-# Load variables from environment
-TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_IDS = list(map(int, os.getenv("GUILD_IDS", "").split(",")))
-
-# Channels
-FLIGHTLOG_CHANNEL_ID = int(os.getenv("FLIGHTLOG_CHANNEL_ID"))
-INFRACTION_CHANNEL_ID = int(os.getenv("INFRACTION_CHANNEL_ID"))
-PROMOTE_CHANNEL_ID = int(os.getenv("PROMOTE_CHANNEL_ID"))
-
-# Whitelist roles (converted to sets of ints for easy checking)
-def parse_roles(var): return set(map(int, os.getenv(var, "").split(",")))
-
-WHITELIST_APP_RESULTS_ROLES = parse_roles("WHITELIST_APP_RESULTS_ROLES")
-WHITELIST_EMBED_ROLES = parse_roles("WHITELIST_EMBED_ROLES")
-WHITELIST_EXPLOITER_LOG_ROLES = parse_roles("WHITELIST_EXPLOITER_LOG_ROLES")
-WHITELIST_FLIGHTBRIEFING_ROLES = parse_roles("WHITELIST_FLIGHTBRIEFING_ROLES")
-WHITELIST_FLIGHTLOG_DELETE_ROLES = parse_roles("WHITELIST_FLIGHTLOG_DELETE_ROLES")
-WHITELIST_FLIGHTLOG_ROLES = parse_roles("WHITELIST_FLIGHTLOG_ROLES")
-WHITELIST_INFRACTION_REMOVE_ROLES = parse_roles("WHITELIST_INFRACTION_REMOVE_ROLES")
-WHITELIST_INFRACTION_ROLES = parse_roles("WHITELIST_INFRACTION_ROLES")
-WHITELIST_INFRACTION_VIEW_ROLES = parse_roles("WHITELIST_INFRACTION_VIEW_ROLES")
-WHITELIST_PROMOTE_ROLES = parse_roles("WHITELIST_PROMOTE_ROLES")
-
-# Utils
-def generate_footer():
-    return f"ID: {''.join(random.choices(string.ascii_uppercase + string.digits, k=6))} • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
-
-def is_authorized(interaction, whitelisted_roles):
-    return any(role.id in whitelisted_roles for role in interaction.user.roles)
-
-# Bot setup
 intents = discord.Intents.default()
-intents.members = True
 intents.message_content = True
+intents.guilds = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Embed command
-@bot.tree.command(name="embed", description="Send an embed using Discohook JSON")
-async def embed(interaction: discord.Interaction, json_text: str):
-    if not is_authorized(interaction, WHITELIST_EMBED_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    try:
-        embed = discord.Embed.from_dict(eval(json_text))
-        embed.set_footer(text=generate_footer())
-        await interaction.response.send_message(embed=embed)
-    except Exception as e:
-        await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+def parse_id_list(env_var):
+    raw = os.getenv(env_var, "")
+    return [int(id.strip()) for id in raw.split(",") if id.strip().isdigit()]
 
-# Application results
-@bot.tree.command(name="app_results", description="Send application results via DM")
-@app_commands.describe(user="User to DM", result="Result (pass/fail)")
-async def app_results(interaction: discord.Interaction, user: discord.User, result: str):
-    if not is_authorized(interaction, WHITELIST_APP_RESULTS_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    embed = discord.Embed(
-        title="Application Result",
-        description=f"Hello {user.mention}, your application has been **{result.upper()}**!",
-        color=discord.Color.green() if result.lower() == "pass" else discord.Color.red()
-    )
-    embed.set_footer(text=generate_footer())
-    await user.send(embed=embed)
-    await interaction.response.send_message("Result sent.", ephemeral=True)
+# Load environment variables for role whitelists and guild IDs
+WHITELIST_INFRACTION_ROLES = parse_id_list("WHITELIST_INFRACTION_ROLES")
+WHITELIST_FLIGHTLOG_ROLES = parse_id_list("WHITELIST_FLIGHTLOG_ROLES")
+WHITELIST_PROMOTE_ROLES = parse_id_list("WHITELIST_PROMOTE_ROLES")
+WHITELIST_EMBED_ROLES = parse_id_list("WHITELIST_EMBED_ROLES")
+WHITELIST_FLIGHTBRIEFING_ROLES = parse_id_list("WHITELIST_FLIGHTBRIEFING_ROLES")
+WHITELIST_FLIGHTLOG_DELETE_ROLES = parse_id_list("WHITELIST_FLIGHTLOG_DELETE_ROLES")
+WHITELIST_INFRACTION_REMOVE_ROLES = parse_id_list("WHITELIST_INFRACTION_REMOVE_ROLES")
+WHITELIST_INFRACTION_VIEW_ROLES = parse_id_list("WHITELIST_INFRACTION_VIEW_ROLES")
+WHITELIST_APP_RESULTS_ROLES = parse_id_list("WHITELIST_APP_RESULTS_ROLES")
+WHITELIST_EXPLOITER_LOG_ROLES = parse_id_list("WHITELIST_EXPLOITER_LOG_ROLES")
 
-# Exploiter log
-@bot.tree.command(name="exploiter_log", description="Log an exploiter")
-async def exploiter_log(interaction: discord.Interaction, user: str, reason: str, evidence: discord.Attachment):
-    if not is_authorized(interaction, WHITELIST_EXPLOITER_LOG_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    channel = bot.get_channel(FLIGHTLOG_CHANNEL_ID)
-    embed = discord.Embed(title="🚨 Exploiter Log", color=discord.Color.red())
-    embed.add_field(name="User", value=user)
-    embed.add_field(name="Reason", value=reason)
-    embed.set_footer(text=generate_footer())
-    await channel.send(embed=embed, file=await evidence.to_file())
-    await interaction.response.send_message("Exploiter logged.", ephemeral=True)
+GUILD_IDS = parse_id_list("GUILD_IDS")
 
-# Promote
-@bot.tree.command(name="promote", description="Log a promotion")
-async def promote(interaction: discord.Interaction, user: discord.User, new_rank: str, reason: str):
-    if not is_authorized(interaction, WHITELIST_PROMOTE_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    channel = bot.get_channel(PROMOTE_CHANNEL_ID)
-    embed = discord.Embed(title="📈 Promotion Logged", color=discord.Color.green())
-    embed.add_field(name="User", value=user.mention)
-    embed.add_field(name="New Rank", value=new_rank)
-    embed.add_field(name="Reason", value=reason)
-    embed.set_footer(text=generate_footer())
-    await channel.send(embed=embed)
-    await interaction.response.send_message("Promotion logged.", ephemeral=True)
+def user_has_role(member: discord.Member, role_list: list[int]) -> bool:
+    return any(role.id in role_list for role in member.roles)
 
-# Flight briefing
-@bot.tree.command(name="flight_briefing", description="Send flight briefing embed with buttons")
-async def flight_briefing(interaction: discord.Interaction, route: str, time: str, aircraft: str, game_link: str, vc_link: str):
-    if not is_authorized(interaction, WHITELIST_FLIGHTBRIEFING_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    embed = discord.Embed(title="🛫 Flight Briefing", color=discord.Color.blue())
-    embed.add_field(name="Route", value=route)
-    embed.add_field(name="Time", value=time)
-    embed.add_field(name="Aircraft", value=aircraft)
-    embed.set_footer(text=generate_footer())
-    view = View()
-    view.add_item(Button(label="Join Game", url=game_link, style=ButtonStyle.link))
-    view.add_item(Button(label="Join VC", url=vc_link, style=ButtonStyle.link))
-    await interaction.response.send_message(embed=embed, view=view)
+def is_guild_allowed(guild: discord.Guild) -> bool:
+    return guild.id in GUILD_IDS
 
-# Flight log
-@bot.tree.command(name="flight_log", description="Log a flight")
-async def flight_log(interaction: discord.Interaction, flight_code: str, aircraft: str, route: str, file: discord.Attachment):
-    if not is_authorized(interaction, WHITELIST_FLIGHTLOG_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    embed = discord.Embed(title="✈️ Flight Log", color=discord.Color.blue())
-    embed.add_field(name="Flight Code", value=flight_code)
-    embed.add_field(name="Aircraft", value=aircraft)
-    embed.add_field(name="Route", value=route)
-    embed.set_footer(text=generate_footer())
-    await bot.get_channel(FLIGHTLOG_CHANNEL_ID).send(embed=embed, file=await file.to_file())
-    await interaction.response.send_message("Flight logged.", ephemeral=True)
+def generate_footer_id(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-# Flightlog delete
-flight_logs = {}  # This should ideally be persistent
+def create_embed(title: str, description: str, color=0x1ABC9C, footer_text=None):
+    embed = discord.Embed(title=title, description=description, color=color)
+    if footer_text is None:
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        footer_text = f"ID: {generate_footer_id()} | {now}"
+    embed.set_footer(text=footer_text)
+    return embed
 
-@bot.tree.command(name="flightlog_delete", description="Delete a flight log")
-async def flightlog_delete(interaction: discord.Interaction, log_id: str):
-    if not is_authorized(interaction, WHITELIST_FLIGHTLOG_DELETE_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    # Simulate deletion (you'd need a DB or message ID store)
-    await interaction.response.send_message(f"Flight log {log_id} deleted.", ephemeral=True)
-
-# Flightlogs view
-@bot.tree.command(name="flightlogs_view", description="View user flight logs")
-async def flightlogs_view(interaction: discord.Interaction, user: discord.User):
-    if not is_authorized(interaction, WHITELIST_FLIGHTLOG_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    await interaction.response.send_message(f"Showing logs for {user.display_name}. (WIP)", ephemeral=True)
-
-# Infraction
-@bot.tree.command(name="infraction", description="Log an infraction/demotion/termination")
-async def infraction(interaction: discord.Interaction, user: discord.User, type: str, reason: str):
-    if not is_authorized(interaction, WHITELIST_INFRACTION_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    embed = discord.Embed(title=f"⚠️ {type.capitalize()}", color=discord.Color.red())
-    embed.add_field(name="User", value=user.mention)
-    embed.add_field(name="Reason", value=reason)
-    embed.set_footer(text=generate_footer())
-    await bot.get_channel(INFRACTION_CHANNEL_ID).send(embed=embed)
-    await interaction.response.send_message("Infraction logged.", ephemeral=True)
-
-# Infraction remove
-@bot.tree.command(name="infraction_remove", description="Remove an infraction by ID")
-async def infraction_remove(interaction: discord.Interaction, log_id: str):
-    if not is_authorized(interaction, WHITELIST_INFRACTION_REMOVE_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    await interaction.response.send_message(f"Infraction {log_id} removed.", ephemeral=True)
-
-# Infraction view
-@bot.tree.command(name="infraction_view", description="View user infractions")
-async def infraction_view(interaction: discord.Interaction, user: discord.User):
-    if not is_authorized(interaction, WHITELIST_INFRACTION_VIEW_ROLES):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
-        return
-    await interaction.response.send_message(f"Showing infractions for {user.display_name}. (WIP)", ephemeral=True)
-
-# Sync on ready
 @bot.event
 async def on_ready():
-    print(f"Bot logged in as {bot.user}")
-    for guild_id in GUILD_IDS:
-        guild = discord.Object(id=guild_id)
-        await bot.tree.sync(guild=guild)
-    print("Commands synced.")
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    print("------")
 
-# Run bot
-bot.run(TOKEN)
+@bot.event
+async def on_guild_join(guild):
+    if not is_guild_allowed(guild):
+        print(f"Leaving guild {guild.name} ({guild.id}) - not whitelisted.")
+        await guild.leave()
+
+# --- COMMANDS ---
+
+# 1. /promote
+@bot.command()
+async def promote(ctx, member: discord.Member, *, role_name: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_PROMOTE_ROLES):
+        return await ctx.reply("You don't have permission to use this command.")
+
+    role = discord.utils.get(ctx.guild.roles, name=role_name)
+    if not role:
+        return await ctx.reply(f"Role `{role_name}` not found.")
+    try:
+        await member.add_roles(role)
+        embed = create_embed(
+            "Promotion Success",
+            f"{ctx.author.mention} promoted {member.mention} by adding role `{role_name}`."
+        )
+        await ctx.reply(embed=embed)
+    except discord.Forbidden:
+        await ctx.reply("I do not have permission to add that role.")
+    except Exception as e:
+        await ctx.reply(f"An error occurred: {e}")
+
+# 2. /infraction
+@bot.command()
+async def infraction(ctx, member: discord.Member, *, reason: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_INFRACTION_ROLES):
+        return await ctx.reply("You don't have permission to use this command.")
+
+    embed = create_embed(
+        "Infraction Logged",
+        f"User {member.mention} was given an infraction by {ctx.author.mention}.\nReason: {reason}"
+    )
+    await ctx.send(embed=embed)
+
+# 3. /flight_log
+@bot.command()
+async def flight_log(ctx, flight_code: str, *, details: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_FLIGHTLOG_ROLES):
+        return await ctx.reply("You don't have permission to use this command.")
+
+    embed = create_embed(
+        f"Flight Log: {flight_code}",
+        details
+    )
+    await ctx.send(embed=embed)
+
+# 4. /flightlog_delete
+@bot.command()
+async def flightlog_delete(ctx, log_id: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_FLIGHTLOG_DELETE_ROLES):
+        return await ctx.reply("You don't have permission to delete flight logs.")
+
+    # For demo purposes, just respond
+    await ctx.reply(f"Flight log with ID `{log_id}` deleted (simulated).")
+
+# 5. /infraction_remove
+@bot.command()
+async def infraction_remove(ctx, infraction_id: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_INFRACTION_REMOVE_ROLES):
+        return await ctx.reply("You don't have permission to remove infractions.")
+
+    # Simulate removal
+    await ctx.reply(f"Infraction with ID `{infraction_id}` removed (simulated).")
+
+# 6. /infraction_view
+@bot.command()
+async def infraction_view(ctx, member: discord.Member):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_INFRACTION_VIEW_ROLES):
+        return await ctx.reply("You don't have permission to view infractions.")
+
+    # Dummy view response
+    embed = create_embed(
+        f"Infractions for {member}",
+        "List of infractions would appear here (simulated)."
+    )
+    await ctx.send(embed=embed)
+
+# 7. /app_results
+@bot.command()
+async def app_results(ctx, member: discord.Member):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_APP_RESULTS_ROLES):
+        return await ctx.reply("You don't have permission to view application results.")
+
+    embed = create_embed(
+        f"Application Results for {member}",
+        "Application results would appear here (simulated)."
+    )
+    await ctx.send(embed=embed)
+
+# 8. /exploiter_log
+@bot.command()
+async def exploiter_log(ctx, member: discord.Member, *, details: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_EXPLOITER_LOG_ROLES):
+        return await ctx.reply("You don't have permission to log exploiters.")
+
+    embed = create_embed(
+        f"Exploiter Log: {member}",
+        details,
+        color=0xFF0000
+    )
+    await ctx.send(embed=embed)
+
+# 9. /flight_briefing
+@bot.command()
+async def flight_briefing(ctx, flight_code: str, *, briefing: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_FLIGHTBRIEFING_ROLES):
+        return await ctx.reply("You don't have permission to send flight briefings.")
+
+    embed = create_embed(
+        f"Flight Briefing: {flight_code}",
+        briefing
+    )
+    await ctx.send(embed=embed)
+
+# 10. /embed
+@bot.command()
+async def embed(ctx, *, content: str):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_EMBED_ROLES):
+        return await ctx.reply("You don't have permission to use this command.")
+
+    embed = create_embed("Custom Embed", content)
+    await ctx.send(embed=embed)
+
+# 11. /flightlogs_view
+@bot.command()
+async def flightlogs_view(ctx):
+    if ctx.guild is None or not is_guild_allowed(ctx.guild):
+        return await ctx.reply("This command cannot be used in this server.")
+    if not user_has_role(ctx.author, WHITELIST_FLIGHTLOG_ROLES):
+        return await ctx.reply("You don't have permission to view flight logs.")
+
+    embed = create_embed(
+        "Flight Logs",
+        "Listing all recent flight logs (simulated)."
+    )
+    await ctx.send(embed=embed)
+
+# --- Run bot ---
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    print("Error: DISCORD_TOKEN environment variable not set.")
+else:
+    bot.run(TOKEN)
