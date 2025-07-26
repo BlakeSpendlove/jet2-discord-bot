@@ -6,110 +6,109 @@ import random
 import string
 from datetime import datetime
 
+# Load environment variables
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_IDS = [int(g) for g in os.getenv("GUILD_IDS", "").split(",") if g.isdigit()]
+GUILD_IDS = os.getenv("GUILD_IDS", "").split(",")
 
-# Channel variables
-PROMOTE_CHANNEL_ID = int(os.getenv("PROMOTE_CHANNEL_ID", 0))
-APP_RESULTS_CHANNEL_ID = int(os.getenv("APP_RESULTS_CHANNEL_ID", 0))
-EXPLOITER_LOG_CHANNEL_ID = int(os.getenv("EXPLOITER_LOG_CHANNEL_ID", 0))
-EMBED_CHANNEL_ID = int(os.getenv("EMBED_CHANNEL_ID", 0))
-
-# Role ID whitelists (as comma-separated env vars)
-PROMOTE_ROLE_IDS = [int(r) for r in os.getenv("PROMOTE_ROLE_IDS", "").split(",") if r.isdigit()]
-APP_RESULTS_ROLE_IDS = [int(r) for r in os.getenv("APP_RESULTS_ROLE_IDS", "").split(",") if r.isdigit()]
-EXPLOITER_LOG_ROLE_IDS = [int(r) for r in os.getenv("EXPLOITER_LOG_ROLE_IDS", "").split(",") if r.isdigit()]
+# Role-based permissions
 EMBED_ROLE_IDS = [int(r) for r in os.getenv("EMBED_ROLE_IDS", "").split(",") if r.isdigit()]
+APPRESULTS_ROLE_IDS = [int(r) for r in os.getenv("APPRESULTS_ROLE_IDS", "").split(",") if r.isdigit()]
+EXPLOITLOG_ROLE_IDS = [int(r) for r in os.getenv("EXPLOITLOG_ROLE_IDS", "").split(",") if r.isdigit()]
+PROMOTE_ROLE_IDS = [int(r) for r in os.getenv("PROMOTE_ROLE_IDS", "").split(",") if r.isdigit()]
 
+# Channel IDs
+APPRESULTS_CHANNEL_ID = int(os.getenv("APPRESULTS_CHANNEL_ID", "0"))
+EXPLOITLOG_CHANNEL_ID = int(os.getenv("EXPLOITLOG_CHANNEL_ID", "0"))
+PROMOTE_CHANNEL_ID = int(os.getenv("PROMOTE_CHANNEL_ID", "0"))
+
+# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Generate a unique 6-character ID
 def generate_unique_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-def is_authorized(interaction: discord.Interaction, allowed_roles):
-    author_roles = [role.id for role in interaction.user.roles]
-    return any(role in author_roles for role in allowed_roles)
+# Check authorization
+def is_authorized(interaction: discord.Interaction, allowed_roles: list) -> bool:
+    if not interaction.user or not hasattr(interaction.user, 'roles'):
+        return False
+    user_roles = [role.id for role in interaction.user.roles]
+    return any(role in user_roles for role in allowed_roles)
 
-def send_embed(title: str, description: str, color: discord.Color):
-    embed = discord.Embed(title=title, description=description, color=color)
-    embed.set_footer(text=f"ID: {generate_unique_id()} • {datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S UTC')}")
-    return embed
-
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    for guild_id in GUILD_IDS:
-        try:
-            await bot.tree.sync(guild=discord.Object(id=guild_id))
-            print(f"Synced commands for guild {guild_id}")
-        except Exception as e:
-            print(f"Failed to sync for guild {guild_id}: {e}")
-
+# /embed
 @app_commands.command(name="embed", description="Send a custom embed")
-@app_commands.describe(title="Embed title", description="Embed description")
-async def embed_cmd(interaction: discord.Interaction, title: str, description: str):
+@app_commands.describe(title="Title of the embed", description="Main body of the embed")
+async def embed(interaction: discord.Interaction, title: str, description: str):
     if not is_authorized(interaction, EMBED_ROLE_IDS):
-        await interaction.response.send_message("You are not authorized.", ephemeral=True)
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
         return
-    embed = send_embed(title, description, discord.Color.red())
-    channel = bot.get_channel(EMBED_CHANNEL_ID)
-    if channel:
-        await channel.send(embed=embed)
-        await interaction.response.send_message("Embed sent.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Embed channel not found.", ephemeral=True)
+    embed = discord.Embed(title=title, description=description, color=discord.Color.red())
+    embed.set_footer(text=f"ID: {generate_unique_id()} • {datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S UTC')}")
+    await interaction.response.send_message(embed=embed)
 
-@app_commands.command(name="promote", description="Log a promotion")
-@app_commands.describe(user="User being promoted", new_rank="New rank")
-async def promote(interaction: discord.Interaction, user: discord.Member, new_rank: str):
+# /app_results
+@app_commands.command(name="app_results", description="Post application results")
+@app_commands.describe(user="User to mention", result="Pass or Fail")
+async def app_results(interaction: discord.Interaction, user: discord.User, result: str):
+    if not is_authorized(interaction, APPRESULTS_ROLE_IDS):
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+        return
+    channel = bot.get_channel(APPRESULTS_CHANNEL_ID)
+    if not channel:
+        await interaction.response.send_message("❌ Channel not found.", ephemeral=True)
+        return
+    embed = discord.Embed(title="Application Result", description=f"{user.mention} has **{result.upper()}** their application!", color=discord.Color.green() if result.lower() == "pass" else discord.Color.red())
+    embed.set_footer(text=f"ID: {generate_unique_id()} • {datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S UTC')}")
+    await channel.send(embed=embed)
+    await interaction.response.send_message("✅ Result posted!", ephemeral=True)
+
+# /exploiter_log
+@app_commands.command(name="exploiter_log", description="Log an exploiter")
+@app_commands.describe(user="User to log", reason="Reason for logging")
+async def exploiter_log(interaction: discord.Interaction, user: discord.User, reason: str):
+    if not is_authorized(interaction, EXPLOITLOG_ROLE_IDS):
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+        return
+    channel = bot.get_channel(EXPLOITLOG_CHANNEL_ID)
+    if not channel:
+        await interaction.response.send_message("❌ Channel not found.", ephemeral=True)
+        return
+    embed = discord.Embed(title="Exploiter Log", description=f"User: {user.mention}\nReason: {reason}", color=discord.Color.red())
+    embed.set_footer(text=f"ID: {generate_unique_id()} • {datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S UTC')}")
+    await channel.send(embed=embed)
+    await interaction.response.send_message("✅ Exploiter logged.", ephemeral=True)
+
+# /promote
+@app_commands.command(name="promote", description="Announce a promotion")
+@app_commands.describe(user="User being promoted", new_rank="New rank title")
+async def promote(interaction: discord.Interaction, user: discord.User, new_rank: str):
     if not is_authorized(interaction, PROMOTE_ROLE_IDS):
-        await interaction.response.send_message("Unauthorized.", ephemeral=True)
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
         return
     channel = bot.get_channel(PROMOTE_CHANNEL_ID)
-    if channel:
-        embed = send_embed("Promotion Logged", f"{user.mention} has been promoted to **{new_rank}** by {interaction.user.mention}", discord.Color.green())
-        await channel.send(embed=embed)
-        await interaction.response.send_message("Promotion logged.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Promotion channel not found.", ephemeral=True)
-
-@app_commands.command(name="app_results", description="Post application results")
-@app_commands.describe(user="Applicant", result="Accepted or Rejected", notes="Optional notes")
-async def app_results(interaction: discord.Interaction, user: discord.Member, result: str, notes: str = "N/A"):
-    if not is_authorized(interaction, APP_RESULTS_ROLE_IDS):
-        await interaction.response.send_message("Unauthorized.", ephemeral=True)
+    if not channel:
+        await interaction.response.send_message("❌ Channel not found.", ephemeral=True)
         return
-    channel = bot.get_channel(APP_RESULTS_CHANNEL_ID)
-    if channel:
-        res_text = "✅ **Accepted**" if result.lower() == "accepted" else "❌ **Rejected**"
-        embed = send_embed("Application Result", f"{user.mention} has been {res_text}\n**Notes:** {notes}", discord.Color.blue())
-        await channel.send(embed=embed)
-        await interaction.response.send_message("Result posted.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Application results channel not found.", ephemeral=True)
+    embed = discord.Embed(title="Promotion", description=f"{user.mention} has been promoted to **{new_rank}**!", color=discord.Color.blue())
+    embed.set_footer(text=f"ID: {generate_unique_id()} • {datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S UTC')}")
+    await channel.send(embed=embed)
+    await interaction.response.send_message("✅ Promotion announced!", ephemeral=True)
 
-@app_commands.command(name="exploiter_log", description="Log an exploiter")
-@app_commands.describe(user="Exploiter", reason="Reason")
-async def exploiter_log(interaction: discord.Interaction, user: discord.Member, reason: str):
-    if not is_authorized(interaction, EXPLOITER_LOG_ROLE_IDS):
-        await interaction.response.send_message("Unauthorized.", ephemeral=True)
-        return
-    channel = bot.get_channel(EXPLOITER_LOG_CHANNEL_ID)
-    if channel:
-        embed = send_embed("Exploiter Logged", f"{user.mention} was logged for: {reason}", discord.Color.dark_red())
-        await channel.send(embed=embed)
-        await interaction.response.send_message("Exploiter logged.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Exploiter log channel not found.", ephemeral=True)
-
-# Register commands
-bot.tree.add_command(embed_cmd)
-bot.tree.add_command(promote)
-bot.tree.add_command(app_results)
-bot.tree.add_command(exploiter_log)
+# Sync commands
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user}")
+    try:
+        for guild_id in GUILD_IDS:
+            guild = discord.Object(id=int(guild_id.strip()))
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        print("✅ Slash commands synced.")
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
 
 bot.run(TOKEN)
