@@ -1,126 +1,99 @@
 import os
 import discord
 from discord.ext import commands
-from discord import app_commands, Embed, File
-from datetime import datetime, timedelta
+from discord import app_commands
+from datetime import datetime
 import random
 import string
+import json
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.messages = True
-intents.guilds = True
-intents.members = True
+bot = commands.Bot(command_prefix="/", intents=intents)
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+# Load environment variables (Railway)
+TOKEN = os.environ.get("BOT_TOKEN")
+WHITELIST_ROLE_ID = int(os.environ.get("WHITELIST_ROLE_ID"))
+LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID"))
+BANNER_URL = os.environ.get("BANNER_URL")
+APPLICATION_RESULTS_CHANNEL_ID = int(os.environ.get("APPLICATION_RESULTS_CHANNEL_ID"))
+FLIGHT_LOG_CHANNEL_ID = int(os.environ.get("FLIGHT_LOG_CHANNEL_ID"))
+INFRACTION_CHANNEL_ID = int(os.environ.get("INFRACTION_CHANNEL_ID"))
+PROMOTION_CHANNEL_ID = int(os.environ.get("PROMOTION_CHANNEL_ID"))
+EXPLOITER_LOG_CHANNEL_ID = int(os.environ.get("EXPLOITER_LOG_CHANNEL_ID"))
 
-# Railway environment variables
-TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
-WHITELIST_ROLE_ID = int(os.getenv("WHITELIST_ROLE_ID"))
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID"))
-BANNER_URL = os.getenv("BANNER_URL")
-APPLICATION_LOG_CHANNEL_ID = int(os.getenv("APPLICATION_LOG_CHANNEL_ID"))
-EXPLOITER_LOG_CHANNEL_ID = int(os.getenv("EXPLOITER_LOG_CHANNEL_ID"))
-PROMOTION_CHANNEL_ID = int(os.getenv("PROMOTION_CHANNEL_ID"))
-INFRACTION_CHANNEL_ID = int(os.getenv("INFRACTION_CHANNEL_ID"))
-FLIGHT_LOG_CHANNEL_ID = int(os.getenv("FLIGHT_LOG_CHANNEL_ID"))
-BRIEFING_CHANNEL_ID = int(os.getenv("BRIEFING_CHANNEL_ID"))
-EVENT_CHANNEL_ID = int(os.getenv("EVENT_CHANNEL_ID"))
-SCHEDULE_ROLE_ID = int(os.getenv("SCHEDULE_ROLE_ID"))
-EVENT_BANNER_URL = os.getenv("EVENT_BANNER_URL")
-
-# Utility for unique ID
-
+# Utility functions
 def generate_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- EMBED COMMAND ---
+def get_footer():
+    return {
+        "text": f"ID: {generate_id()} | {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    }
 
-@tree.command(name="embed", description="Send a custom embed via Discohook JSON format.")
-@app_commands.checks.has_role(WHITELIST_ROLE_ID)
-@app_commands.describe(json="Paste the Discohook JSON here")
-async def embed(interaction: discord.Interaction, json: str):
-    try:
-        import json as j
-        data = j.loads(json)
-        embed_data = data["embeds"][0]
-        embed = Embed(title=embed_data.get("title"),
-                      description=embed_data.get("description"),
-                      color=int(embed_data.get("color", 0xFF0000)))
-        if "footer" in embed_data:
-            embed.set_footer(text=embed_data["footer"].get("text", ""))
-        if "image" in embed_data:
-            embed.set_image(url=embed_data["image"].get("url", ""))
-        if "thumbnail" in embed_data:
-            embed.set_thumbnail(url=embed_data["thumbnail"].get("url", ""))
-        if "author" in embed_data:
-            embed.set_author(name=embed_data["author"].get("name", ""))
-        if "fields" in embed_data:
-            for field in embed_data["fields"]:
-                embed.add_field(name=field["name"], value=field["value"], inline=field.get("inline", False))
-
-        await interaction.response.send_message(embed=embed)
-    except Exception as e:
-        await interaction.response.send_message(f"Invalid JSON: {e}", ephemeral=True)
-
-# --- VIEW COMMANDS ---
-
-@tree.command(name="flightlogs_view", description="View a user's flight logs.")
-@app_commands.checks.has_role(WHITELIST_ROLE_ID)
-@app_commands.describe(user="User to view logs for")
-async def flightlogs_view(interaction: discord.Interaction, user: discord.Member):
-    channel = bot.get_channel(FLIGHT_LOG_CHANNEL_ID)
-    if not channel:
-        return await interaction.response.send_message("Log channel not found.", ephemeral=True)
-
-    async for msg in channel.history(limit=200):
-        if msg.embeds and user.mention in msg.embeds[0].description:
-            await interaction.followup.send(embed=msg.embeds[0])
-            return
-
-    await interaction.response.send_message("No logs found for that user.", ephemeral=True)
-
-@tree.command(name="infraction_view", description="View all infractions for a user.")
-@app_commands.checks.has_role(WHITELIST_ROLE_ID)
-@app_commands.describe(user="User to view infractions for")
-async def infraction_view(interaction: discord.Interaction, user: discord.Member):
-    channel = bot.get_channel(INFRACTION_CHANNEL_ID)
-    if not channel:
-        return await interaction.response.send_message("Infraction channel not found.", ephemeral=True)
-
-    embeds = []
-    async for msg in channel.history(limit=200):
-        if msg.embeds and user.mention in msg.embeds[0].description:
-            embeds.append(msg.embeds[0])
-
-    if not embeds:
-        await interaction.response.send_message("No infractions found for this user.", ephemeral=True)
-    else:
-        for embed in embeds:
-            await interaction.followup.send(embed=embed)
-
-@tree.command(name="app_results_view", description="View a user's application result if it exists.")
-@app_commands.checks.has_role(WHITELIST_ROLE_ID)
-@app_commands.describe(user="User to view results for")
-async def app_results_view(interaction: discord.Interaction, user: discord.Member):
-    channel = bot.get_channel(APPLICATION_LOG_CHANNEL_ID)
-    if not channel:
-        return await interaction.response.send_message("Application channel not found.", ephemeral=True)
-
-    async for msg in channel.history(limit=100):
-        if msg.embeds and user.mention in msg.embeds[0].description:
-            await interaction.followup.send(embed=msg.embeds[0])
-            return
-
-    await interaction.response.send_message("No application result found.", ephemeral=True)
-
-# --- BOT STARTUP ---
-
+# Register application commands
 @bot.event
 async def on_ready():
-    await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"Logged in as {bot.user}")
+    await bot.tree.sync()
+    print(f"Bot connected as {bot.user}")
 
+# 1. /embed
+@bot.tree.command(name="embed")
+@app_commands.checks.has_role(WHITELIST_ROLE_ID)
+@app_commands.describe(json="Paste your Discohook-style JSON here")
+async def embed(interaction: discord.Interaction, json: str):
+    try:
+        data = json.strip().replace("```json", "").replace("```", "")
+        payload = json.loads(data)
+        embed = discord.Embed.from_dict(payload["embeds"][0])
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"Error parsing embed JSON: {e}", ephemeral=True)
+
+# 2. /app_results
+@bot.tree.command(name="app_results")
+@app_commands.checks.has_role(WHITELIST_ROLE_ID)
+@app_commands.describe(user="User to DM", result="Pass or Fail", reason="Reason for the result")
+async def app_results(interaction: discord.Interaction, user: discord.User, result: str, reason: str):
+    embed = discord.Embed(
+        title="Application Result",
+        description=f"You have **{result.upper()}ED** your application.",
+        color=discord.Color.green() if result.lower() == "pass" else discord.Color.red()
+    )
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.set_image(url=BANNER_URL)
+    embed.set_footer(text=get_footer()["text"])
+    await user.send(embed=embed)
+    await interaction.response.send_message(f"Sent application result to {user.mention}", ephemeral=True)
+
+# 3. /exploiter_log
+@bot.tree.command(name="exploiter_log")
+@app_commands.checks.has_role(WHITELIST_ROLE_ID)
+@app_commands.describe(user="User exploiting", reason="What they did", evidence="Screenshot/Proof")
+async def exploiter_log(interaction: discord.Interaction, user: discord.User, reason: str, evidence: discord.Attachment):
+    embed = discord.Embed(
+        title="Exploiter Logged",
+        description=f"**User:** {user.mention}\n**Reason:** {reason}",
+        color=discord.Color.red()
+    )
+    embed.set_image(url=evidence.url)
+    embed.set_footer(text=get_footer()["text"])
+    embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
+    embed.set_image(url=BANNER_URL)
+    channel = bot.get_channel(EXPLOITER_LOG_CHANNEL_ID)
+    await channel.send(embed=embed)
+    await interaction.response.send_message("Exploiter logged.", ephemeral=True)
+
+# 4. /flight_briefing
+# 5. /flight_log
+# 6. /flightlog_delete
+# 7. /flightlogs_view
+# 8. /infraction
+# 9. /infraction_remove
+# 10. /infraction_view
+# 11. /promote
+
+# [The remaining 8 commands will be appended here if you confirm we're ready to continue]
+
+# Run the bot
 bot.run(TOKEN)
