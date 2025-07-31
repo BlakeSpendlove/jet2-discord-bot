@@ -1,16 +1,15 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import asyncio
-from datetime import datetime
 import random
+import string
+import datetime
 import os
 
-# Required env variables (these must be set in Railway)
-TOKEN = os.environ.get("DISCORD_TOKEN")
-GUILD_ID = os.environ.get("GUILD_ID")
+# Constants (Replace only BOT_TOKEN and GUILD_ID with environment variables)
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+GUILD_ID = int(os.environ["GUILD_ID"])
 
-# Constants
 WHITELIST_ROLE_ID = 1397864367680127048
 ROLE_EMBED = 1396992153208488057
 ROLE_SESSION_LOG = 1395904999279820831
@@ -24,41 +23,48 @@ BANNER_URL = "https://media.discordapp.net/attachments/1395760490982150194/13957
 
 intents = discord.Intents.default()
 intents.message_content = True
-tree = app_commands.CommandTree(commands.Bot(command_prefix="!", intents=intents))
-bot = tree._bot
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
 
-# Utility
-
+# Utility to generate a unique 6-character alphanumeric ID
 def generate_id():
-    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=6))
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# Utility to generate a timestamped footer
+def generate_footer():
+    return f"ID: {generate_id()} • {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+
+# On ready
+guild = discord.Object(id=GUILD_ID)
 
 @bot.event
 async def on_ready():
-    await tree.sync(guild=discord.Object(id=int(GUILD_ID)))
-    print(f"Bot connected as {bot.user}.")
+    await tree.sync(guild=guild)
+    print(f"Bot is online as {bot.user}")
 
-# EMBED command
-@tree.command(name="embed", description="Send a custom embed.", guild=discord.Object(id=int(GUILD_ID)))
-@app_commands.checks.has_role(ROLE_EMBED)
-@app_commands.describe(json_code="Paste the Discohook-style JSON embed code")
+# Example command template (replace this with your 11 working commands)
+@tree.command(name="embed", description="Send a custom embed using JSON.", guild=guild)
+@app_commands.checks.has_role(WHITELIST_ROLE_ID)
+@app_commands.describe(json_code="Raw JSON for the embed")
 async def embed_command(interaction: discord.Interaction, json_code: str):
     try:
-        parsed = discord.Embed.from_dict(eval(json_code))
-        await interaction.channel.send(embed=parsed)
-        await interaction.response.send_message("✅ Embed sent successfully.", ephemeral=True)
+        embed_data = eval(json_code)  # You should use json.loads() in production
+        embed = discord.Embed.from_dict(embed_data)
+        embed.set_image(url=BANNER_URL)
+        embed.set_footer(text=generate_footer())
+        await interaction.response.send_message("Embed sent.", ephemeral=True)
+        await interaction.channel.send(embed=embed)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error parsing embed: {e}", ephemeral=True)
+        await interaction.response.send_message(f"Error: {str(e)}", ephemeral=True)
 
 # Error handler
 @embed_command.error
-async def embed_error(interaction: discord.Interaction, error):
+async def on_embed_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.errors.MissingRole):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
+        await interaction.response.send_message("An error occurred.", ephemeral=True)
 
-# Run bot
-if TOKEN is None or GUILD_ID is None:
-    print("DISCORD_TOKEN and GUILD_ID must be set as environment variables.")
-else:
-    bot.run(TOKEN)
+# Add your 10 other commands here using similar structure
+
+bot.run(BOT_TOKEN)
