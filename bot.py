@@ -42,20 +42,56 @@ async def on_ready():
     await tree.sync(guild=guild)
     print(f"Bot is online as {bot.user}")
 
-# Example command template (replace this with your 11 working commands)
-@tree.command(name="embed", description="Send a custom embed using JSON.", guild=guild)
-@app_commands.checks.has_role(WHITELIST_ROLE_ID)
-@app_commands.describe(json_code="Raw JSON for the embed")
+@tree.command(name="embed", description="Send a custom embed using Discohook-style JSON.")
+@app_commands.describe(json_code="The JSON code for the embed")
 async def embed_command(interaction: discord.Interaction, json_code: str):
+    # Check role permissions
+    if ROLE_EMBED not in [role.id for role in interaction.user.roles]:
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+
     try:
-        embed_data = eval(json_code)  # You should use json.loads() in production
-        embed = discord.Embed.from_dict(embed_data)
-        embed.set_image(url=BANNER_URL)
-        embed.set_footer(text=generate_footer())
+        data = json.loads(json_code)
+
+        # Handle single or multiple embeds
+        embeds = []
+        embed_data_list = data.get("embeds", [data]) if isinstance(data, dict) else data
+        if not isinstance(embed_data_list, list):
+            embed_data_list = [embed_data_list]
+
+        for embed_data in embed_data_list:
+            embed = discord.Embed(
+                title=embed_data.get("title", discord.Embed.Empty),
+                description=embed_data.get("description", discord.Embed.Empty),
+                color=discord.Color.from_str(embed_data.get("color", "#ff0000")) if "color" in embed_data else discord.Color.red()
+            )
+            if "footer" in embed_data:
+                embed.set_footer(text=embed_data["footer"].get("text", ""))
+            if "image" in embed_data:
+                embed.set_image(url=embed_data["image"].get("url", ""))
+            if "thumbnail" in embed_data:
+                embed.set_thumbnail(url=embed_data["thumbnail"].get("url", ""))
+            if "author" in embed_data:
+                embed.set_author(
+                    name=embed_data["author"].get("name", ""),
+                    url=embed_data["author"].get("url", discord.Embed.Empty),
+                    icon_url=embed_data["author"].get("icon_url", discord.Embed.Empty),
+                )
+            for field in embed_data.get("fields", []):
+                embed.add_field(
+                    name=field.get("name", "\u200b"),
+                    value=field.get("value", "\u200b"),
+                    inline=field.get("inline", False),
+                )
+            embeds.append(embed)
+
         await interaction.response.send_message("Embed sent.", ephemeral=True)
-        await interaction.channel.send(embed=embed)
+        for embed in embeds:
+            await interaction.channel.send(embed=embed)
+
     except Exception as e:
-        await interaction.response.send_message(f"Error: {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Failed to parse JSON embed: {e}", ephemeral=True)
+
 
 # Error handler
 @embed_command.error
