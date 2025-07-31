@@ -1,16 +1,16 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os
-import datetime
+import asyncio
+from datetime import datetime
 import random
-import string
+import os
 
-# Environment variables
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
+# Required env variables (these must be set in Railway)
+TOKEN = os.environ.get("DISCORD_TOKEN")
+GUILD_ID = os.environ.get("GUILD_ID")
 
-# Hardcoded constants
+# Constants
 WHITELIST_ROLE_ID = 1397864367680127048
 ROLE_EMBED = 1396992153208488057
 ROLE_SESSION_LOG = 1395904999279820831
@@ -24,28 +24,41 @@ BANNER_URL = "https://media.discordapp.net/attachments/1395760490982150194/13957
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+tree = app_commands.CommandTree(commands.Bot(command_prefix="!", intents=intents))
+bot = tree._bot
+
+# Utility
 
 def generate_id():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=6))
 
 @bot.event
 async def on_ready():
-    await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"Bot connected as {bot.user}")
+    await tree.sync(guild=discord.Object(id=int(GUILD_ID)))
+    print(f"Bot connected as {bot.user}.")
 
-# Command 1: /embed
-@tree.command(name="embed", description="Send a custom embed.", guild=discord.Object(id=GUILD_ID))
+# EMBED command
+@tree.command(name="embed", description="Send a custom embed.", guild=discord.Object(id=int(GUILD_ID)))
 @app_commands.checks.has_role(ROLE_EMBED)
-@app_commands.describe(json_code="Paste your Discohook JSON here")
-async def embed(interaction: discord.Interaction, json_code: str):
+@app_commands.describe(json_code="Paste the Discohook-style JSON embed code")
+async def embed_command(interaction: discord.Interaction, json_code: str):
     try:
-        data = eval(json_code)  # Only for trusted use
-        embed = discord.Embed.from_dict(data["embeds"][0])
-        await interaction.channel.send(embed=embed)
-        await interaction.response.send_message("✅ Embed sent.", ephemeral=True)
+        parsed = discord.Embed.from_dict(eval(json_code))
+        await interaction.channel.send(embed=parsed)
+        await interaction.response.send_message("✅ Embed sent successfully.", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error parsing embed: {e}", ephemeral=True)
 
-# Additional commands (2-11) will be filled in below...
+# Error handler
+@embed_command.error
+async def embed_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingRole):
+        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ An error occurred.", ephemeral=True)
+
+# Run bot
+if TOKEN is None or GUILD_ID is None:
+    print("DISCORD_TOKEN and GUILD_ID must be set as environment variables.")
+else:
+    bot.run(TOKEN)
